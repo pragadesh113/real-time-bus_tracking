@@ -2,6 +2,7 @@ from flask import Flask, render_template, jsonify, request
 import pyrebase
 from flask_cors import CORS
 from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
 import geopy.distance  # For distance calculation
 import requests
 import os
@@ -49,6 +50,9 @@ bus_stops = [
 
 # Track stops that have been notified
 notified_stops = set()
+
+# Reverse geocoding URL (using OpenStreetMap Nominatim)
+reverse_geocode_url = "https://nominatim.openstreetmap.org/reverse"
 
 def send_sms(phone_numbers, message):
     """Send an SMS using Twilio."""
