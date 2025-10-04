@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Tracking Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map {
+      height: 500px;
+      width: 100%;
+      margin: 20px auto;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    .bus-icon {
+      background-color: red;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 25px;
+      width: 25px;
+      height: 25px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <h1>Bus Tracking Map</h1>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const OPENROUTESERVICE_API_KEY = '5b3ce3597851110001cf62480ada29e5b0eb4409b98fc1783b15cc30';
+
+    const busStops = [
+    { name: 'Periar Nilayam', coords: [9.91576, 78.11070], marker: null },
+    { name: 'Palanganatham', coords: [78.09352, 9.90076], marker: null },
+      { name: 'Thiruparankundram', coords: [78.07453, 9.88580], marker: null },
+      { name: 'Tce library', coords: [78.08115, 9.88402], marker: null },
+      { name: 'Thirunagar', coords: [78.05316, 9.88229], marker: null },
+      { name: 'Thirumangalam', coords: [77.99063, 9.82697], marker: null }
+    ];
+
+    const map = L.map('map').setView(busStops[0].coords.reverse(), 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    busStops.forEach(stop => {
+      stop.marker = L.marker(stop.coords.slice().reverse()).addTo(map);
+      stop.marker.bindPopup(`<b>${stop.name}</b><br>Distance: Calculating...<br>Estimated Arrival: Calculating...`);
+    });
+
+    const busIcon = L.divIcon({
+      className: 'bus-icon',
+      html: 'B',
+      iconSize: [25, 25],
+      iconAnchor: [12, 12]
+    });
+
+    let busMarker;
+let isFirstUpdate = true; // Flag to track if it's the first location update
+
+function updateLocation() {
+  fetch('/api/coordinates')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Failed to fetch bus location: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      const { latitude, longitude } = data;
+
+      if (latitude && longitude) {
+        const busCoords = [latitude, longitude];
+
+        if (busMarker) {
+          // Update bus marker position only, without recentering the map
+          busMarker.setLatLng(busCoords);
+          busMarker.setPopupContent(`<b>Bus Location</b><br>Latitude: ${latitude}<br>Longitude: ${longitude}`);
+        } else {
+          // Add the bus marker initially
+          busMarker = L.marker(busCoords, { icon: busIcon })
+            .addTo(map)
+            .bindPopup(`<b>Bus Location</b><br>Latitude: ${latitude}<br>Longitude: ${longitude}`);
+        }
+
+        // Center the map only on the first update
+        if (isFirstUpdate) {
+          map.setView(busCoords, 13);
+          isFirstUpdate = false; // Disable further recentering
+        }
+
+        calculateDistancesAndTimes([longitude, latitude], busStops);
+      }
+    })
+    .catch(error => {
+      console.error('Error fetching live bus location:', error);
+    });
+}
+
+// Call updateLocation and refresh every 5 seconds
+updateLocation();
+setInterval(updateLocation, 5000);
+
+function calculateDistancesAndTimes(busCoords, busStops) {
+  const locations = [busCoords, ...busStops.map(stop => stop.coords)];
+
+  const requestBody = {
+    locations: locations,
+    metrics: ['distance', 'duration'],
+    sources: [0],
+    destinations: Array.from({ length: busStops.length }, (_, i) => i + 1),
+  };
+
+  fetch('https://api.openrouteservice.org/v2/matrix/driving-car', {
+    method: 'POST',
+    headers: {
+      'Authorization': OPENROUTESERVICE_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  })
+    .then(response => {
+      if (response.status === 429) {
+        throw new Error('Rate limit exceeded, please wait and try again.');
+      }
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      const distances = data.distances[0];
+      const durations = data.durations[0];
+
+      busStops.forEach((stop, index) => {
+        const distanceKm = (distances[index] / 1000).toFixed(2);
+        const durationMin = (durations[index] / 60).toFixed(2);
+
+        stop.marker.setPopupContent(`
+          <b>${stop.name}</b><br>
+          Distance: ${distanceKm} km<br>
+          Estimated Arrival: ${durationMin} minutes
+        `);
+      });
+    })
+    .catch(error => {
+      console.error('Error calculating distances and times:', error.message);
+    });
+}
+
+
+    updateLocation();
+    setInterval(updateLocation, 5000);
+  </script>
+</body>
+</html>
+
+
+
+
+
